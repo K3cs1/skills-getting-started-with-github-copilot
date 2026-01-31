@@ -35,18 +35,28 @@ document.addEventListener("DOMContentLoaded", () => {
         <p>${escapeHtml(details.description)}</p>
         <div class="participants-section">
           <h5 class="participants-heading">Participants</h5>
-          ${renderParticipants(details.participants)}
+          ${renderParticipants(details.participants, name)}
         </div>
       `;
       activitiesListEl.appendChild(card);
     });
   }
 
-  function renderParticipants(list) {
+  function renderParticipants(list, activityName) {
     if (!list || !list.length) {
       return '<ul class="participants-list"><li class="participant-item participant-empty">No participants yet</li></ul>';
     }
-    const items = list.map((p) => `<li class="participants-list-item participant-item">${escapeHtml(p)}</li>`).join("");
+    const items = list
+      .map(
+        (p) => `
+      <li class="participants-list-item participant-item">
+        <span class="participant-email">${escapeHtml(p)}</span>
+        <button class="delete-participant" data-email="${escapeHtml(p)}" title="Remove participant" aria-label="Remove ${escapeHtml(
+          p
+        )}">✖</button>
+      </li>`
+      )
+      .join("");
     return `<ul class="participants-list">${items}</ul>`;
   }
 
@@ -92,15 +102,44 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   function updateActivityCard(activityName) {
-    const card = document.querySelector(`.activity-card[data-activity="${CSS.escape(activityName)}"]`);
+    // Find the activity card by matching the dataset property directly. This avoids
+    // cross-browser issues with CSS.escape and attribute selectors.
+    const cards = document.querySelectorAll(".activity-card");
+    const card = Array.from(cards).find((c) => c.dataset.activity === activityName);
     if (!card) return;
     const participantsSection = card.querySelector(".participants-section");
     if (!participantsSection) return;
     participantsSection.innerHTML = `
       <h5 class="participants-heading">Participants</h5>
-      ${renderParticipants(activities[activityName].participants)}
+      ${renderParticipants(activities[activityName].participants, activityName)}
     `;
   }
+
+  // Handle participant delete clicks (event delegation)
+  activitiesListEl.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".delete-participant");
+    if (!btn) return;
+    const card = btn.closest(".activity-card");
+    if (!card) return;
+    const activityName = card.dataset.activity;
+    const email = btn.dataset.email;
+    if (!activityName || !email) return;
+    try {
+      const response = await fetch(
+        `/activities/${encodeURIComponent(activityName)}/participants?email=${encodeURIComponent(email)}`,
+        { method: "DELETE" }
+      );
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(err.detail || "Failed to remove participant");
+      }
+      activities[activityName].participants = activities[activityName].participants.filter((p) => p !== email);
+      updateActivityCard(activityName);
+      showMessage(`Removed ${email} from ${activityName}`, "success");
+    } catch (error) {
+      showMessage(error.message, "error");
+    }
+  });
 
   function showMessage(text, type = "info") {
     messageEl.textContent = text;
